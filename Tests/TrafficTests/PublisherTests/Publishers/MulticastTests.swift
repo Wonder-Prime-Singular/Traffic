@@ -3,35 +3,36 @@ import XCTest
 import Combine
 @available(OSX 10.15, *)
 final class MulticastTests: XCTestCase, TestCaseProtocol {
-typealias Element = String
+  typealias Element = Int
   func testMulticastPass() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
 
-    let m1 = s1.print().multicast({ return _PassthroughSubject<String, Swift.Error>() })
-    let m2 = s2.print().multicast({ return PassthroughSubject<String, Swift.Error>() })
+    let m1 = s1.print().multicast({ return _PassthroughSubject<Int, Swift.Error>() })
+    let m2 = s2.print().multicast({ return PassthroughSubject<Int, Swift.Error>() })
 
-    _ = m1.connect()
-    _ = m2.connect()
-
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
-//
+    //
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
 
     var x = 0
     while x < 10  {
-      s1.send(x.description)
-      s2.send(x.description)
+      s1.send(x)
+      s2.send(x)
       x += 1
     }
     checkEqualAll()
   }
   func testMulticastPass2() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
 
-    let m1 = s1.print().multicast({ return _PassthroughSubject<String, Swift.Error>() })
-    let m2 = s2.print().multicast({ return PassthroughSubject<String, Swift.Error>() })
+    let m1 = s1.print().multicast({ return _PassthroughSubject<Int, Swift.Error>() })
+    let m2 = s2.print().multicast({ return PassthroughSubject<Int, Swift.Error>() })
 
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
 
@@ -40,8 +41,8 @@ typealias Element = String
 
     var x = 0
     while x < 10  {
-      s1.send(x.description)
-      s2.send(x.description)
+      s1.send(x)
+      s2.send(x)
       x += 1
       if x == 6 {
         cancel_1.cancel()
@@ -53,23 +54,25 @@ typealias Element = String
 
   }
   func testMulticastPass3() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
 
-    let m1 = s1.print().multicast({ return _PassthroughSubject<String, Swift.Error>() })
-    let m2 = s2.print().multicast({ return PassthroughSubject<String, Swift.Error>() })
+    let m1 = s1.print().multicast({ return _PassthroughSubject<Int, Swift.Error>() })
+    let m2 = s2.print().multicast({ return PassthroughSubject<Int, Swift.Error>() })
 
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
-//
+    //
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
 
-    _ = m1.connect()
-    _ = m2.connect()
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
 
     var x = 0
     while x < 10  {
-      s1.send(x.description)
-      s2.send(x.description)
+      s1.send(x)
+      s2.send(x)
       x += 1
     }
     s1.send(completion: .finished)
@@ -77,85 +80,93 @@ typealias Element = String
     checkEqualAll()
   }
   func testMulticastPass4() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
 
-    s1.send("A")
-    s2.send("A")
+    s1.send(4)
+    s2.send(4)
 
     s1.send(completion: .finished)
     s2.send(completion: .finished)
 
-    let m1 = s1.print().multicast({ return _PassthroughSubject<String, Swift.Error>() })
-    let m2 = s2.print().multicast({ return PassthroughSubject<String, Swift.Error>() })
+    let m1 = s1.print().multicast({ return _PassthroughSubject<Int, Swift.Error>() })
+    let m2 = s2.print().multicast({ return PassthroughSubject<Int, Swift.Error>() })
 
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
-//
+    //
     sink(m1.map({ (s) in s }),
          m2.map({ (s) in s }))
 
-    _ = m1.connect()
-    _ = m2.connect()
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
 
     checkEqualAll()
   }
   func testMulticastPass5() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
 
-    let m1 = s1.print().multicast({ return _PassthroughSubject<String, Swift.Error>() })
-    let m2 = s2.print().multicast({ return PassthroughSubject<String, Swift.Error>() })
+    let m1 = s1.print().multicast({ return _PassthroughSubject<Int, Swift.Error>() })
+    let m2 = s2.print().multicast({ return PassthroughSubject<Int, Swift.Error>() })
 
-    _ = m1.connect()
-    _ = m2.connect()
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
 
-    s1.send("A")
-    s2.send("A")
+    s1.send(3)
+    s2.send(3)
 
     s1.send(completion: .finished)
     s2.send(completion: .finished)
 
     sink(m1.map({ (s) in s }),
          m2.map({ (s) in s }))
-//
+    //
     sink(m1.map({ (s) in s }),
          m2.map({ (s) in s }))
     
     checkEqualAll()
   }
   func testMulticastCurrent() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
 
-    let m1 = s1.print("T").multicast({ return _CurrentValueSubject<String, Swift.Error>("A") })
-    let m2 = s2.print("C").multicast({ return CurrentValueSubject<String, Swift.Error>("A") })
+    let m1 = s1.print("T").multicast({ return _CurrentValueSubject<Int, Swift.Error>(5) })
+    let m2 = s2.print("C").multicast({ return CurrentValueSubject<Int, Swift.Error>(5) })
 
     sink(m1.map({ (s) in s }),
          m2.map({ (s) in s }))
-//
+    //
     sink(m1.map({ (s) in s }),
          m2.map({ (s) in s }))
 
-    _ = m1.connect()
-    _ = m2.connect()
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
 
     var x = 0
     while x < 10  {
-      s1.send(x.description)
-      s2.send(x.description)
+      s1.send(x)
+      s2.send(x)
       x += 1
     }
     checkEqualAll()
   }
   func testMulticastCurrent2() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
-    let m1 = s1.print().multicast({ return _CurrentValueSubject<String, Swift.Error>("Q") })
-    let m2 = s2.print().multicast({ return CurrentValueSubject<String, Swift.Error>("Q") })
-    _ = m1.connect()
-    _ = m2.connect()
-    s1.send("A")
-    s2.send("A")
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
+    let m1 = s1.print().multicast({ return _CurrentValueSubject<Int, Swift.Error>(4) })
+    let m2 = s2.print().multicast({ return CurrentValueSubject<Int, Swift.Error>(4) })
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
+    s1.send(1)
+    s2.send(1)
     s1.send(completion: .finished)
     s2.send(completion: .finished)
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
@@ -163,16 +174,18 @@ typealias Element = String
     checkEqualAll()
   }
   func testMulticastCurrent3() -> Void {
-    let s1 = _PassthroughSubject<String, Swift.Error>()
-    let s2 = PassthroughSubject<String, Swift.Error>()
-    let m1 = s1.print().multicast({ return _CurrentValueSubject<String, Swift.Error>("Q") })
-    let m2 = s2.print().multicast({ return CurrentValueSubject<String, Swift.Error>("Q") })
-    s1.send("A")
-    s2.send("A")
+    let s1 = _PassthroughSubject<Int, Swift.Error>()
+    let s2 = PassthroughSubject<Int, Swift.Error>()
+    let m1 = s1.print().multicast({ return _CurrentValueSubject<Int, Swift.Error>(3) })
+    let m2 = s2.print().multicast({ return CurrentValueSubject<Int, Swift.Error>(3) })
+    s1.send(1)
+    s2.send(1)
     s1.send(completion: .finished)
     s2.send(completion: .finished)
-    _ = m1.connect()
-    _ = m2.connect()
+    let cancel_1 = m1.connect()
+    let cancel_2 = m2.connect()
+    self.hold(cancel_1)
+    self.hold(cancel_2)
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
     sink(m1.map({ (s) in s }), m2.map({ (s) in s }))
     checkEqualAll()

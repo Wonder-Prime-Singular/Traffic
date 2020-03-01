@@ -25,5 +25,18 @@ extension _Subscriptions {
         super.init(downstream: downstream)
       }
     }
+    open class Subject<S: _Subject>: Simple<_AnySubscriber<S.Output, S.Failure>> {
+      var subject: S?
+      public init<Downstream: _Subscriber>(subject: S, downstream: Downstream) where Downstream.Input == S.Output, Downstream.Failure == S.Failure {
+        self.subject = subject
+        super.init(downstream: _AnySubscriber<S.Output, S.Failure>(downstream))
+      }
+      open func receive(_ input: S.Output) {
+        traffic_abstract_method()
+      }
+      open func receive(completion: _Subscribers.Completion<S.Failure>) {
+        traffic_abstract_method()
+      }
+    }
   }
 }

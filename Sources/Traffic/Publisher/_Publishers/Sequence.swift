@@ -13,26 +13,36 @@ extension _Publishers {
       self.sequence = sequence
     }
     public func receive<Downstream: _Subscriber>(subscriber: Downstream) where Downstream.Input == Output, Downstream.Failure == Failure {
-      let leading = _Subscriptions.Leading.Sequence(publisher: self, downstream: subscriber)
+      let leading = _Subscriptions.Leading.Sequence(sequence: self, downstream: subscriber)
       subscriber.receive(subscription: leading)
     }
   }
 }
 private extension _Subscriptions.Leading {
-  class Sequence<Elements: Swift.Sequence, Downstream: _Subscriber>: _Subscriptions.Leading.Base<_Publishers.Sequence<Elements, Downstream.Failure>, Downstream> where Downstream.Input == Elements.Element {
+  class Sequence<Elements: Swift.Sequence, Downstream: _Subscriber>: _Subscriptions.Leading.Simple<Downstream> where Downstream.Input == Elements.Element {
+    var iterator: Elements.Iterator
+    func current() -> Elements.Element? {
+      return iterator.next()
+    }
+    init(sequence: _Publishers.Sequence<Elements, Downstream.Failure>, downstream: Downstream) {
+      self.iterator = sequence.sequence.makeIterator()
+      super.init(downstream: downstream)
+    }
     override func cancel() {
       downstream = nil
     }
     override func request(_ demand: _Subscribers.Demand) {
       lock.withLock {
-        var demand = demand
-        for input in publisher.sequence {
-          demand -= downstream?.receive(input) ?? .none
-          if demand <= .none {
-            break
+        self.demand += demand
+        while let downstream = self.downstream, self.demand > 0 {
+          if let current = self.current() {
+            self.demand -= 1
+            self.demand += downstream.receive(current)
+          } else {
+            self.downstream = nil
+            downstream.receive(completion: .finished)
           }
         }
-        downstream?.receive(completion: .finished)
       }
     }
     override var description: String {

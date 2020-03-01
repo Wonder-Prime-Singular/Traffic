@@ -1,10 +1,11 @@
 /// A subject that wraps a single value and publishes a new element whenever the value changes.
 public final class _CurrentValueSubject<Output, Failure: Swift.Error>: _Subject {
-  private var completion: _Subscribers.Completion<Failure>?
-  fileprivate var receiveValues: [CombineIdentifier: (Output) -> _Subscribers.Demand] = [:]
-  fileprivate var receiveCompletions: [CombineIdentifier: (_Subscribers.Completion<Failure>) -> Void] = [:]
+  fileprivate var downstreams: [_Subscriptions.Leading.CurrentValueSubject<Output, Failure>] = []
+  var completion: _Subscribers.Completion<Failure>?
+  var upstreams: [_Subscription] = []
+  var isUpstreamPublishingNeeded: Bool = false
   fileprivate var _value: Output
-  fileprivate let lock: Locking = RecursiveLock()
+  let lock: Locking = RecursiveLock()
   /// The value wrapped by this subject, published as a new element whenever it changes.
   public var value: Output {
     get {
@@ -22,30 +23,23 @@ public final class _CurrentValueSubject<Output, Failure: Swift.Error>: _Subject 
   }
   public func send(_ value: Output) {
     lock.withLock {
-      guard completion == nil else {
-        return
-      }
       _value = value
-      receiveValues.forEach { (_, receiveValue) in
-        _ = receiveValue(value)
+      for downstream in downstreams where downstream.subject != nil && downstream.demand > 0 {
+        downstream.receive(value)
       }
     }
   }
   public func send(completion: _Subscribers.Completion<Failure>) {
     lock.withLock {
-      if self.completion == nil {
-        self.completion = completion
-      }
-      receiveCompletions.forEach { (_, receiveCompletion) in
-        receiveCompletion(completion)
+      self.completion = completion
+      for downstream in downstreams {
+        downstream.receive(completion: completion)
       }
     }
   }
   public func send(subscription: _Subscription) {
     lock.withLock {
-      guard completion == nil else {
-        return
-      }
+      upstreams.append(subscription)
       subscription.request(.unlimited)
     }
   }
@@ -55,37 +49,33 @@ public final class _CurrentValueSubject<Output, Failure: Swift.Error>: _Subject 
         subscriber.receive(subscription: _Subscriptions.empty)
         subscriber.receive(completion: completion!)
       } else {
-        let id = subscriber.combineIdentifier
-        let leading = _Subscriptions.Leading.CurrentValueSubject(publisher: self, downstream: subscriber)
-        receiveValues[id] = { (value) in
-          return subscriber.receive(value)
-        }
-        receiveCompletions[id] = { (completion) in
-          subscriber.receive(completion: completion)
-        }
+        let leading = _Subscriptions.Leading.CurrentValueSubject(subject: self, downstream: subscriber)
+        self.downstreams.append(leading)
         subscriber.receive(subscription: leading)
       }
     }
   }
 }
 private extension _Subscriptions.Leading {
-  class CurrentValueSubject<Downstream: _Subscriber>: _Subscriptions.Leading.Base<_CurrentValueSubject<Downstream.Input, Downstream.Failure>, Downstream> {
+  class CurrentValueSubject<Output, Failure: Swift.Error>: _Subscriptions.Leading.Subject<_CurrentValueSubject<Output, Failure>> {
     override func cancel() {
-      guard let id = downstream?.combineIdentifier else {
-        return
-      }
-      publisher.lock.withLock {
-        self.publisher.receiveValues.removeValue(forKey: id)
-        self.publisher.receiveCompletions.removeValue(forKey: id)
-      }
+      subject = nil
       downstream = nil
     }
     override func request(_ demand: _Subscribers.Demand) {
-      if demand > .none {
-        publisher.lock.withLock {
-          _ = downstream?.receive(publisher.value)
-        }
+      self.demand += demand
+      if let value = subject?.value {
+        receive(value)
       }
+    }
+    override func receive(_ input: Output) {
+      demand += downstream?.receive(input) ?? 0
+      demand -= 1
+    }
+    override func receive(completion: _Subscribers.Completion<Failure>) {
+      subject = nil
+      downstream?.receive(completion: completion)
+      downstream = nil
     }
     override var description: String {
       return "CurrentValueSubject"

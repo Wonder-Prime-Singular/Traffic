@@ -3,8 +3,12 @@ import XCTest
 import Combine
 @available(OSX 10.15, *)
 final class FlatMapTests: XCTestCase, TestCaseProtocol {
-typealias Element = Int
 
+  override func setUp() {
+    super.setUp()
+    self.continueAfterFailure = false
+  }
+  typealias Element = Int
 
   var cancellableBag: Set<_AnyCancellable> = []
   let array = [1, 2, 3, 4, 5]
@@ -17,6 +21,19 @@ typealias Element = Int
     }
     static func == (lhs: AA, rhs: AA) -> Bool {
       return lhs.output == rhs.output && lhs.completion.isFinished == rhs.completion.isFinished
+    }
+    var _record: _Record<Int, Error> {
+      _Record(output: output, completion: completion)
+    }
+    var record: Record<Int, Error> {
+      Record(output: output, completion: {
+        switch completion {
+        case .finished:
+          return Subscribers.Completion.finished
+        case .failure(let error):
+          return Subscribers.Completion.failure(error)
+        }
+      }())
     }
   }
   struct A {
@@ -89,37 +106,44 @@ typealias Element = Int
 
   func testWithRecording(_ recordings: A, delay: Bool) -> Void {
     testWithRecording(recordings, delay: delay, max: nil)
-    testWithRecording(recordings, delay: delay, max: 1)
+//    testWithRecording(recordings, delay: delay, max: 1)
+  }
+
+  func ran() -> String {
+    return (0..<5).map({ _ in Int.random(in: 0...9) }).map({ String.init(describing: $0) }).joined()
   }
 
   func testWithRecording(_ recordings: A, delay: Bool, max: Int?) -> Void {
     let e = XCTestExpectation()
     let queue = DispatchQueue(label: "delay", qos: .utility)
-    self.testSequence(elements: recordings.output, completion: recordings.completion, transform1: {
+    var qqq = 0
+    var www = 0
+    self.testMany(elements: recordings.output, completion: recordings.completion, transform1: {
       return $0.flatMap(maxPublishers: max == nil ? .unlimited : .max(max!), { (a) -> _AnyPublisher<Int, Error> in
-        let recording = _Record(output: a.output, completion: a.completion)
+        let recording = a._record
         if delay {
-          return recording.delay(for: .seconds(1), scheduler: queue.trafficDispatchQueue).eraseToAnyPublisher()
+          qqq += 1
+          return recording
+            .delay(for: .seconds(1), scheduler: queue.trafficDispatchQueue)
+            .eraseToAnyPublisher()
         } else {
           return recording.eraseToAnyPublisher()
         }
       })
+      .print("TRF")
     }, transform2: {
       return $0.flatMap(maxPublishers: max == nil ? .unlimited : .max(max!), { (a) -> AnyPublisher<Int, Error> in
-        let recording = Record<Int, Error>(output: a.output, completion: {
-          switch a.completion {
-          case .finished:
-            return Subscribers.Completion.finished
-          case .failure(let error):
-            return Subscribers.Completion.failure(error)
-          }
-          }())
+        let recording = a.record
         if delay {
-          return recording.delay(for: .seconds(1), scheduler: queue).eraseToAnyPublisher()
+          www += 1
+          return recording
+            .delay(for: .seconds(1), scheduler: queue)
+            .eraseToAnyPublisher()
         } else {
           return recording.eraseToAnyPublisher()
         }
       })
+        .print("CMB")
     }) {
       e.fulfill()
     }

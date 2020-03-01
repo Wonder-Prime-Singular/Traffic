@@ -6,12 +6,12 @@ final class ComparisonTests: XCTestCase, TestCaseProtocol {
   typealias Element = Int
   @usableFromInline
   func testComparisonNoThrows(file: StaticString = #file, line: UInt = #line, elements: [Element], completion: _Subscribers.Completion<Error>, _ areInIncreasingOrder: @escaping (Int, Int) -> Bool) {
-    self.testSequence(file: file, line: line, elements: elements, completion: completion, transform1: {
+    self.testMany(file: file, line: line, elements: elements, completion: completion, transform1: {
       $0.max(by: areInIncreasingOrder)
     }, transform2: {
       $0.max(by: areInIncreasingOrder)
     })
-    self.testSequence(file: file, line: line, elements: elements, completion: completion, transform1: {
+    self.testMany(file: file, line: line, elements: elements, completion: completion, transform1: {
       $0.min(by: areInIncreasingOrder)
     }, transform2: {
       $0.min(by: areInIncreasingOrder)
@@ -19,12 +19,12 @@ final class ComparisonTests: XCTestCase, TestCaseProtocol {
   }
   @usableFromInline
   func testComparisonThrows(file: StaticString = #file, line: UInt = #line, elements: [Element], completion: _Subscribers.Completion<Error>, _ areInIncreasingOrder: @escaping (Int, Int) throws -> Bool) {
-    self.testSequence(file: file, line: line, elements: elements, completion: completion, transform1: {
+    self.testMany(file: file, line: line, elements: elements, completion: completion, transform1: {
       $0.tryMax(by: areInIncreasingOrder)
     }, transform2: {
       $0.tryMax(by: areInIncreasingOrder)
     })
-    self.testSequence(file: file, line: line, elements: elements, completion: completion, transform1: {
+    self.testMany(file: file, line: line, elements: elements, completion: completion, transform1: {
       $0.tryMin(by: areInIncreasingOrder)
     }, transform2: {
       $0.tryMin(by: areInIncreasingOrder)
@@ -32,12 +32,12 @@ final class ComparisonTests: XCTestCase, TestCaseProtocol {
   }
   @usableFromInline
   func testComparison(elements: [Element], completion: _Subscribers.Completion<Error>) {
-    self.testSequence(elements: elements, completion: completion, transform1: {
+    self.testMany(elements: elements, completion: completion, transform1: {
       $0.max()
     }, transform2: {
       $0.max()
     })
-    self.testSequence(elements: elements, completion: completion, transform1: {
+    self.testMany(elements: elements, completion: completion, transform1: {
       $0.min()
     }, transform2: {
       $0.min()

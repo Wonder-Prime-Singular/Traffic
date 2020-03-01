@@ -60,8 +60,12 @@ private extension _Subscriptions.Leading {
       downstream = nil
     }
     override func request(_ demand: _Subscribers.Demand) {
-      _ = downstream?.receive(try! publisher.result.get())
-      downstream?.receive(completion: .finished)
+      guard let downstream = self.downstream else {
+        return
+      }
+      self.downstream = nil
+      _ = downstream.receive(try! publisher.result.get())
+      downstream.receive(completion: .finished)
     }
     override var description: String {
       return "Once"

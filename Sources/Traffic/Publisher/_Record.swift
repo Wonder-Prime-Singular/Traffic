@@ -46,31 +46,46 @@ public struct _Record<Output, Failure: Swift.Error>: _Publisher {
     recording = Recording(output: output, completion: completion)
   }
   public func receive<Downstream: _Subscriber>(subscriber: Downstream) where Downstream.Input == Output, Downstream.Failure == Failure {
-    let leading = _Subscriptions.Leading.Record(publisher: self, downstream: subscriber)
+    let leading = _Subscriptions.Leading.Record(record: self, downstream: subscriber)
     subscriber.receive(subscription: leading)
   }
 }
 private extension _Subscriptions.Leading {
-  class Record<Downstream: _Subscriber>: _Subscriptions.Leading.Base<_Record<Downstream.Input, Downstream.Failure>, Downstream> {
+  class Record<Downstream: _Subscriber>: _Subscriptions.Leading.Simple<Downstream> {
+    typealias Elements = [Downstream.Input]
+    var output: Elements
+    var iterator: Elements.Iterator
+    var completion: _Subscribers.Completion<Downstream.Failure>
+    func current() -> Elements.Element? {
+      return iterator.next()
+    }
+    init(record: _Record<Downstream.Input, Downstream.Failure>, downstream: Downstream) {
+      self.output = record.recording.output
+      self.iterator = record.recording.output.makeIterator()
+      self.completion = record.recording.completion
+      super.init(downstream: downstream)
+    }
     override func cancel() {
-      isCancelled = true
       downstream = nil
+      output.removeAll()
+      completion = .finished
     }
     override func request(_ demand: _Subscribers.Demand) {
-      guard !isCancelled else {
-        return
-      }
-      var demand = demand
-      for value in publisher.recording.output {
-        demand -= downstream?.receive(value) ?? .none
-        if demand <= .none {
-          break
+      lock.withLock {
+        self.demand += demand
+        while let downstream = self.downstream, self.demand > 0 {
+          if let current = self.current() {
+            self.demand -= 1
+            self.demand += downstream.receive(current)
+          } else {
+            self.downstream = nil
+            downstream.receive(completion: completion)
+          }
         }
       }
-      downstream?.receive(completion: publisher.recording.completion)
     }
     override var description: String {
-      return "Record"
+      return self.output.description
     }
   }
 }

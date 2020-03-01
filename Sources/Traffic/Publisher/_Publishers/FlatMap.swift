@@ -33,19 +33,13 @@ extension _Publishers {
 }
 private extension _Publishers.Channel {
   class FlatMap<NewPublisher: _Publisher, UpstreamOutput, Downstream: _Subscriber>: _Publishers.Channel.Base<UpstreamOutput, NewPublisher.Failure, Downstream> where NewPublisher.Output == Downstream.Input, NewPublisher.Failure == Downstream.Failure {
-    let lock: Lock = Lock()
-    var maxPublishers: _Subscribers.Demand
+    let lock: Locking = RecursiveLock()
+    let maxPublishers: _Subscribers.Demand
     let transform: (Input) -> NewPublisher
-    var subscribedCount: Int = 0
-    var completedCount: Int = 0
+    var pendingSubscriptionCount: Int = 0
     var subscriptions: [_Subscription] = []
-    var upstreamFailed: Bool = false
+    var upstreamCompleted: Bool = false
     var newPublisherFailed: Bool = false
-    func checkAllCompleted() {
-      if subscribedCount == completedCount {
-        downstream.receive(completion: .finished)
-      }
-    }
     init<Upstream: _Publisher>(flatMap: _Publishers.FlatMap<NewPublisher, Upstream>, downstream: Downstream) where Upstream.Output == Input {
       self.transform = flatMap.transform
       self.maxPublishers = flatMap.maxPublishers
@@ -55,9 +49,6 @@ private extension _Publishers.Channel {
       guard super.shouldReceive(subscription: subscription) else {
         return
       }
-      lock.withLock {
-        subscribedCount += 1
-      }
       downstream.receive(subscription: self)
       subscription.request(maxPublishers)
     }
@@ -65,30 +56,36 @@ private extension _Publishers.Channel {
       guard super.isSubscribedAndNotCompleted() else {
         return .none
       }
-      if maxPublishers > .none {
-        maxPublishers -= 1
-        let newPublisher = transform(input)
-        let newMidstream = FlatMapNew(downstream: nil)
-        newMidstream.channel = self
-        newPublisher.subscribe(newMidstream)
-        return .none
-      } else {
-        return .none
-      }
+      pendingSubscriptionCount += 1
+      let newPublisher = transform(input)
+      let newMidstream = FlatMapNew(downstream: nil)
+      newMidstream.channel = self
+      newPublisher.subscribe(newMidstream)
+      return .none
     }
     override func receive(completion: _Subscribers.Completion<Failure>) {
-      guard super.shouldReceiveCompletion(completion) else {
-        return
-      }
+      upstreamCompleted = true
       if case .failure = completion {
-        upstreamFailed = true
+        guard super.shouldReceiveCompletion(completion) else {
+          return
+        }
         downstream.receive(completion: completion)
       } else {
         lock.withLock {
-          completedCount += 1
-          checkAllCompleted()
+          _ = isAllCompleted()
         }
       }
+    }
+    func isAllCompleted() -> Bool {
+      if upstreamCompleted && subscriptions.isEmpty && pendingSubscriptionCount == 0 {
+        let completion = _Subscribers.Completion<Failure>.finished
+        guard super.shouldReceiveCompletion(completion) else {
+          return true
+        }
+        downstream.receive(completion: completion)
+        return true
+      }
+      return false
     }
     override func cancel() {
       guard super.shouldCancel() else {
@@ -104,27 +101,38 @@ private extension _Publishers.Channel {
       guard super.shouldRequest(demand) else {
         return
       }
-      receivedSubscription()?.request(demand)
+      self.demand += demand
     }
-    func receiveNew(subscription: _Subscription) {
-      lock.withLock {
-        subscribedCount += 1
-      }
+    func receiveNew(subscription: _Subscription, id: CombineIdentifier) {
+      pendingSubscriptionCount -= 1
       subscriptions.append(subscription)
-      subscription.request(.unlimited)
+      if self.demand == .unlimited {
+        subscription.request(.unlimited)
+      } else {
+        subscription.request(.max(1))
+      }
     }
-    func receiveNew(_ input: NewPublisher.Output) -> _Subscribers.Demand {
-      return downstream.receive(input)
+    func receiveNew(_ input: NewPublisher.Output, id: CombineIdentifier) -> _Subscribers.Demand {
+      self.demand += downstream.receive(input)
+      self.demand -= 1
+      return .none
     }
-    func receiveNew(completion: _Subscribers.Completion<NewPublisher.Failure>) {
+    func receiveNew(completion: _Subscribers.Completion<NewPublisher.Failure>, id: CombineIdentifier) {
       if case .failure = completion {
         newPublisherFailed = true
+        for s in subscriptions where s.combineIdentifier != id {
+          s.cancel()
+        }
+        subscriptions.removeAll()
         downstream.receive(completion: completion)
       } else {
-        maxPublishers += 1
+        if let index = subscriptions.firstIndex(where: { $0.combineIdentifier == id }) {
+          subscriptions.remove(at: index)
+        }
         lock.withLock {
-          completedCount += 1
-          checkAllCompleted()
+          if !isAllCompleted(), maxPublishers != .unlimited {
+            receivedSubscription()?.request(.max(1))
+          }
         }
       }
     }
@@ -132,27 +140,17 @@ private extension _Publishers.Channel {
       return "FlatMap"
     }
     class FlatMapNew: _Publishers.Channel.Base<NewPublisher.Output, NewPublisher.Failure, Downstream> {
+      var subscriptionId: CombineIdentifier = .init()
       weak var channel: FlatMap?
       override func receive(subscription: _Subscription) {
-        guard super.shouldReceive(subscription: subscription) else {
-          return
-        }
-        guard channel?.isSubscribedAndNotCompleted() == true else {
-          return
-        }
-        channel?.receiveNew(subscription: subscription)
+        subscriptionId = subscription.combineIdentifier
+        channel?.receiveNew(subscription: subscription, id: subscriptionId)
       }
       override func receive(_ input: Input) -> _Subscribers.Demand {
-        guard super.isSubscribedAndNotCompleted() else {
-          return .none
-        }
-        return channel?.receiveNew(input) ?? .none
+        return channel?.receiveNew(input, id: subscriptionId) ?? .none
       }
       override func receive(completion: _Subscribers.Completion<Failure>) {
-        guard super.shouldReceiveCompletion(completion) else {
-          return
-        }
-        channel?.receiveNew(completion: completion)
+        channel?.receiveNew(completion: completion, id: subscriptionId)
       }
       override var description: String {
         return "FlatMap"

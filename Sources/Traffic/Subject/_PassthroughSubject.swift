@@ -1,29 +1,40 @@
 public final class _PassthroughSubject<Output, Failure: Swift.Error>: _Subject {
+  fileprivate var downstreams: [_Subscriptions.Leading.PassthroughSubject<Output, Failure>] = []
   var completion: _Subscribers.Completion<Failure>?
-  var receiveValues: [CombineIdentifier: (Output) -> _Subscribers.Demand] = [:]
-  var receiveCompletions: [CombineIdentifier: (_Subscribers.Completion<Failure>) -> Void] = [:]
-  var upstreamSubscription: [_Subscription] = []
+  var upstreams: [_Subscription] = []
+  var isUpstreamPublishingNeeded: Bool = false
   internal let lock: Locking = RecursiveLock()
   public init() {}
   public func send(_ value: Output) {
     lock.withLock {
-      receiveValues.forEach { (_, receiveValue) in
-        _ = receiveValue(value)
+      for downstream in downstreams where downstream.subject != nil && downstream.demand > 0 {
+        downstream.receive(value)
       }
     }
   }
   public func send(completion: _Subscribers.Completion<Failure>) {
     lock.withLock {
       self.completion = completion
-      receiveCompletions.forEach { (_, receiveCompletion) in
-        receiveCompletion(completion)
+      for downstream in downstreams {
+        downstream.receive(completion: completion)
       }
     }
   }
   public func send(subscription: _Subscription) {
     lock.withLock {
-      upstreamSubscription.append(subscription)
-      subscription.request(.unlimited)
+      upstreams.append(subscription)
+      if isUpstreamPublishingNeeded {
+        subscription.request(.unlimited)
+      }
+    }
+  }
+  func requestUpstreamToPublishIfNeeded() -> Void {
+    guard !isUpstreamPublishingNeeded else {
+      return
+    }
+    isUpstreamPublishingNeeded = true
+    for s in upstreams {
+      s.request(.unlimited)
     }
   }
   public func receive<Downstream: _Subscriber>(subscriber: Downstream) where Downstream.Input == Output, Downstream.Failure == Failure {
@@ -32,32 +43,31 @@ public final class _PassthroughSubject<Output, Failure: Swift.Error>: _Subject {
         subscriber.receive(subscription: _Subscriptions.empty)
         subscriber.receive(completion: completion!)
       } else {
-        let id = subscriber.combineIdentifier
-        let leading = _Subscriptions.Leading.PassthroughSubject(publisher: self, downstream: subscriber)
-        receiveValues[id] = { (value) in
-          return subscriber.receive(value)
-        }
-        receiveCompletions[id] = { (completion) in
-          subscriber.receive(completion: completion)
-        }
+        let leading = _Subscriptions.Leading.PassthroughSubject(subject: self, downstream: subscriber)
+        self.downstreams.append(leading)
         subscriber.receive(subscription: leading)
       }
     }
   }
 }
 private extension _Subscriptions.Leading {
-  class PassthroughSubject<Downstream: _Subscriber>: _Subscriptions.Leading.Base<_PassthroughSubject<Downstream.Input, Downstream.Failure>, Downstream> {
+  class PassthroughSubject<Output, Failure: Swift.Error>: _Subscriptions.Leading.Subject<_PassthroughSubject<Output, Failure>> {
     override func cancel() {
-      guard let id = downstream?.combineIdentifier else {
-        return
-      }
-      publisher.lock.withTryLock {
-        self.publisher.receiveValues.removeValue(forKey: id)
-        self.publisher.receiveCompletions.removeValue(forKey: id)
-      }
+      subject = nil
       downstream = nil
     }
     override func request(_ demand: _Subscribers.Demand) {
+      self.demand += demand
+      self.subject?.requestUpstreamToPublishIfNeeded()
+    }
+    override func receive(_ input: Output) {
+      demand += downstream?.receive(input) ?? 0
+      demand -= 1
+    }
+    override func receive(completion: _Subscribers.Completion<Failure>) {
+      subject = nil
+      downstream?.receive(completion: completion)
+      downstream = nil
     }
     override var description: String {
       return "PassthroughSubject"

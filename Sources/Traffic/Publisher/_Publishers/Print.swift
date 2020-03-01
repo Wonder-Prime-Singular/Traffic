@@ -43,10 +43,13 @@ extension _Publishers {
 private extension _Publishers.Channel {
   class Print<Downstream: _Subscriber>: _Publishers.Channel.Base<Downstream.Input, Downstream.Failure, Downstream> {
     let lock = Lock()
-    let prefix: String
+    var prefixClosure: (() -> String)?
+    var prefix: String = ""
     var stream: TextOutputStream?
     init<Upstream: _Publisher>(print: _Publishers.Print<Upstream>, downstream: Downstream) where Upstream.Output == Downstream.Input, Upstream.Failure ==Downstream.Failure {
-      self.prefix = print.prefix.isEmpty ? "" : "\(print.prefix): "
+      self.prefixClosure = {
+        print.prefix.isEmpty ? "" : "\(print.prefix): "
+      }
       self.stream = print.stream
       super.init(downstream: downstream)
     }
@@ -63,6 +66,10 @@ private extension _Publishers.Channel {
     override func receive(subscription: _Subscription) {
       guard super.shouldReceive(subscription: subscription) else {
         return
+      }
+      if prefixClosure != nil {
+        prefix = prefixClosure!()
+        prefixClosure = nil
       }
       write("\(prefix)receive subscription: (\(subscription))")
       let derived = DerivedSubscription(channel: self, subscription: subscription)
